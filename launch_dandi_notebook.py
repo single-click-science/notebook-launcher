@@ -14,7 +14,7 @@ from pathlib import Path
 IMAGE = "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"
 
 CONTAINER_NAME = "dandi-example-notebook"
-JUPYTER_PORT = 8888  # host-side port; bound to 127.0.0.1 only
+DEFAULT_PORT = 8888  # preferred host-side port; bound to 127.0.0.1 only
 
 if getattr(sys, "frozen", False):
     REPO_PATH = Path(sys.executable).parent.resolve()
@@ -58,6 +58,24 @@ def check_docker():
         sys.exit(1)
 
 
+def find_free_port(start_port=DEFAULT_PORT, max_tries=20):
+    """
+    Find a port on 127.0.0.1 that's actually free, starting at start_port and
+    counting up. This is what lets the launcher work even when something else
+    on the machine (another app, another Jupyter server) already holds the
+    default port — no manual cleanup required from the user.
+    """
+    port = start_port
+    for _ in range(max_tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                port += 1
+    return None
+
+
 def remove_stale_container():
     """Remove a leftover container from a previous run, if any."""
     print("🧹 Cleaning up any previous container...")
@@ -70,22 +88,58 @@ def pull_image():
     run(f"docker pull {IMAGE}")
 
 
-def start_container():
-    """Start the notebook image, bound to localhost only."""
-    run(
-        f"docker run -d --name {CONTAINER_NAME} "
-        f"-p 127.0.0.1:{JUPYTER_PORT}:8888 {IMAGE}"
-    )
-    print("✅ Container started")
+def start_container(starting_port, max_tries=20):
+    """
+    Start the notebook image, bound to localhost only. If Docker reports the
+    port as already allocated, remove the failed container and retry on the
+    next port, rather than trusting a pre-flight check alone — Docker Desktop
+    tracks port reservations internally, so a port can look free to a plain
+    socket test and still be rejected by the daemon (as happened here).
+    Returns the port that actually worked.
+    """
+    port = starting_port
+    for attempt in range(max_tries):
+        command = (
+            f"docker run -d --name {CONTAINER_NAME} "
+            f"-p 127.0.0.1:{port}:8888 {IMAGE}"
+        )
+        print(f"Running: {command}")
+        result = subprocess.run(
+            command, shell=True, cwd=REPO_PATH, capture_output=True, text=True
+        )
+
+        if result.returncode == 0:
+            print(f"✅ Container started on port {port}")
+            return port
+
+        stderr = result.stderr or ""
+        if "port is already allocated" in stderr or "address already in use" in stderr.lower():
+            print(f"⚠️ Port {port} is already in use, trying {port + 1}...")
+            # `docker run -d` can create the container before the network
+            # setup step fails, leaving a dead container holding our name —
+            # remove it before the retry or the next attempt fails on a name
+            # conflict instead of a port conflict.
+            subprocess.run(f"docker rm -f {CONTAINER_NAME}", shell=True,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            port += 1
+            continue
+
+        print(f"❌ Command failed: {command}\n{stderr}")
+        input("Press Enter to exit...")
+        sys.exit(1)
+
+    print("❌ Couldn't find a free port after several attempts.")
+    input("Press Enter to exit...")
+    sys.exit(1)
 
 
-def wait_for_jupyter(timeout=60):
+def wait_for_jupyter(port, timeout=60):
     """Wait until Jupyter is listening on the host port."""
-    print(f"⏳ Waiting for Jupyter on port {JUPYTER_PORT}...")
+    print(f"⏳ Waiting for Jupyter on port {port}...")
     start = time.time()
     while time.time() - start < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(("127.0.0.1", JUPYTER_PORT)) == 0:
+            if sock.connect_ex(("127.0.0.1", port)) == 0:
                 print("✅ Jupyter is ready")
                 return True
         time.sleep(1)
@@ -123,14 +177,14 @@ def get_jupyter_token(timeout=30):
     return None
 
 
-def open_jupyter(token):
+def open_jupyter(token, port):
     """Open JupyterLab in the browser."""
     if token:
-        url = f"http://127.0.0.1:{JUPYTER_PORT}/lab?token={token}"
+        url = f"http://127.0.0.1:{port}/lab?token={token}"
     else:
         # Fall back to the bare URL; user will need to copy the token
         # themselves from `docker logs`, e.g. `docker logs {CONTAINER_NAME}`.
-        url = f"http://127.0.0.1:{JUPYTER_PORT}/lab"
+        url = f"http://127.0.0.1:{port}/lab"
         print(f"⚠️ Opening without a token. If prompted, run: docker logs {CONTAINER_NAME}")
 
     print(f"🌐 Opening Jupyter at: {url}")
@@ -148,11 +202,18 @@ def main():
     check_docker()
     remove_stale_container()
     pull_image()
-    start_container()
 
-    if wait_for_jupyter():
+    starting_guess = find_free_port()
+    if starting_guess is None:
+        starting_guess = DEFAULT_PORT  # let start_container's own retry loop sort it out
+
+    port = start_container(starting_guess)
+    if port != DEFAULT_PORT:
+        print(f"ℹ️ Port {DEFAULT_PORT} was busy, using {port} instead.")
+
+    if wait_for_jupyter(port):
         token = get_jupyter_token()
-        open_jupyter(token)
+        open_jupyter(token, port)
     else:
         print("❌ Jupyter never became reachable. Check `docker logs "
               f"{CONTAINER_NAME}` for details.")

@@ -4,10 +4,19 @@ import re
 import subprocess
 import socket
 import time
+import itertools
+import threading
 import webbrowser
 from pathlib import Path
 
 # ----------------- Config -----------------
+frames = itertools.cycle(["|", "/", "-", "\\"])
+for _ in range(50):
+    sys.stdout.write(f"\rTesting spinner {next(frames)}")
+    sys.stdout.flush()
+    time.sleep(0.1)
+print("\nDone.")
+
 
 # Which prebuilt notebook image to run. Change this to the notebook you want,
 # e.g. "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"
@@ -26,6 +35,56 @@ else:
 # when the container is removed.
 WORK_DIR = REPO_PATH / "work"
 CONTAINER_WORK_PATH = "/work"
+
+
+# ----------------- Progress indicator -----------------
+
+class Spinner:
+    """
+    Simple console spinner for indeterminate waits. Use as a context manager
+    around any blocking call:
+
+        with Spinner("Checking Docker..."):
+            subprocess.run("docker info", shell=True, check=True)
+
+    ASCII-only spin characters (no emoji) so it renders cleanly when
+    overwritten in place on Windows' default console codepage.
+    """
+
+    def __init__(self, message="Working...", interval=0.1):
+        self.message = message
+        self.interval = interval
+        self._stop_event = threading.Event()
+        self._thread = None
+
+    def _spin(self):
+        frames = itertools.cycle(["|", "/", "-", "\\"])
+        start = time.time()
+        while not self._stop_event.is_set():
+            elapsed = int(time.time() - start)
+            sys.stdout.write(f"\r{self.message} {next(frames)} ({elapsed}s)")
+            sys.stdout.flush()
+            time.sleep(self.interval)
+        # Clear the line when done
+        sys.stdout.write("\r" + " " * (len(self.message) + 15) + "\r")
+        sys.stdout.flush()
+
+    def start(self):
+        self._stop_event.clear()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join()
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
 
 
 # ----------------- Helpers -----------------
@@ -49,16 +108,22 @@ def run(command, **kwargs):
 
 def check_docker():
     """Check if Docker is running."""
-    try:
-        subprocess.run(
-            "docker info",
-            shell=True,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+    with Spinner("Checking Docker..."):
+        try:
+            subprocess.run(
+                "docker info",
+                shell=True,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            ok = True
+        except subprocess.CalledProcessError:
+            ok = False
+
+    if ok:
         print("✅ Docker is running")
-    except subprocess.CalledProcessError:
+    else:
         print("❌ Docker is not running. Please start Docker Desktop and try again.")
         input("Press Enter to exit...")
         sys.exit(1)
@@ -90,7 +155,13 @@ def remove_stale_container():
 
 
 def pull_image():
-    """Pull the image so first-run and update latency happen up front, with clear output."""
+    """
+    Pull the image so first-run and update latency happen up front.
+    Deliberately NOT wrapped in Spinner: `docker pull` already streams its
+    own real layer-by-layer download progress when left uncaptured, which is
+    more informative than a generic spinner — capturing it to drive a
+    spinner would throw that away.
+    """
     run(f"docker pull {IMAGE}")
 
 
@@ -170,17 +241,21 @@ def start_container(starting_port, max_tries=20):
 
 def wait_for_jupyter(port, timeout=60):
     """Wait until Jupyter is listening on the host port."""
-    print(f"⏳ Waiting for Jupyter on port {port}...")
-    start = time.time()
-    while time.time() - start < timeout:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-            if sock.connect_ex(("127.0.0.1", port)) == 0:
-                print("✅ Jupyter is ready")
-                return True
-        time.sleep(1)
+    ready = False
+    with Spinner(f"Waiting for Jupyter on port {port}..."):
+        start = time.time()
+        while time.time() - start < timeout:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                if sock.connect_ex(("127.0.0.1", port)) == 0:
+                    ready = True
+                    break
+            time.sleep(1)
 
-    print("⚠️ Timeout waiting for Jupyter")
-    return False
+    if ready:
+        print("✅ Jupyter is ready")
+    else:
+        print("⚠️ Timeout waiting for Jupyter")
+    return ready
 
 
 def get_jupyter_token(timeout=30):
@@ -189,27 +264,30 @@ def get_jupyter_token(timeout=30):
     containing it to stdout/stderr. Poll `docker logs` until that URL shows up
     and pull the token out of it.
     """
-    print("🔑 Reading Jupyter token from container logs...")
     pattern = re.compile(r"token=([a-zA-Z0-9]+)")
-    start = time.time()
+    token = None
 
-    while time.time() - start < timeout:
-        result = subprocess.run(
-            f"docker logs {CONTAINER_NAME}",
-            shell=True,
-            capture_output=True,
-            text=True,
-        )
-        combined = result.stdout + result.stderr
-        match = pattern.search(combined)
-        if match:
-            token = match.group(1)
-            print("✅ Token found")
-            return token
-        time.sleep(1)
+    with Spinner("Reading Jupyter token from container logs..."):
+        start = time.time()
+        while time.time() - start < timeout:
+            result = subprocess.run(
+                f"docker logs {CONTAINER_NAME}",
+                shell=True,
+                capture_output=True,
+                text=True,
+            )
+            combined = result.stdout + result.stderr
+            match = pattern.search(combined)
+            if match:
+                token = match.group(1)
+                break
+            time.sleep(1)
 
-    print("⚠️ Could not find a token in the container logs.")
-    return None
+    if token:
+        print("✅ Token found")
+    else:
+        print("⚠️ Could not find a token in the container logs.")
+    return token
 
 
 def open_jupyter(token, port):

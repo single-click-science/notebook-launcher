@@ -28,17 +28,19 @@ else:
 WORK_DIR = REPO_PATH / "work"
 CONTAINER_WORK_PATH = "/work"
 
-# Which prebuilt notebook image to run. Read from notebook.json next to the
-# launcher, which the DANDI example-notebooks workflow writes when it
-# packages a release, e.g. {"image": "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"}
-NOTEBOOK_CONFIG = REPO_PATH / "notebook.json"
+# Which prebuilt notebook image to run. Read from config/image.json in the
+# launcher's folder, which the DANDI example-notebooks workflow writes when
+# it packages a release, e.g. {"image": "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"}
+# Kept in a subfolder so users see only the launcher and don't open it by mistake.
+IMAGE_CONFIG_NAME = "config/image.json"
+IMAGE_CONFIG = REPO_PATH / IMAGE_CONFIG_NAME
 
 # Only DANDI's own registry is allowed. The pattern also limits the name to
 # characters that are safe to pass through the shell to docker.
 IMAGE_PATTERN = re.compile(
     r"ghcr\.io/dandi/[a-z0-9._/-]+(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?"
 )
-IMAGE = None  # set from NOTEBOOK_CONFIG by load_image()
+IMAGE = None  # set from IMAGE_CONFIG by load_image()
 
 # Generated fresh on every launch so each user's Jupyter server has its own
 # random secret. Passed into the container as JUPYTER_TOKEN, which Jupyter
@@ -116,21 +118,21 @@ def run(command, **kwargs):
 
 
 def load_image():
-    """Read the notebook image name from NOTEBOOK_CONFIG and validate it."""
+    """Read the notebook image name from IMAGE_CONFIG and validate it."""
     global IMAGE
     try:
-        config = json.loads(NOTEBOOK_CONFIG.read_text(encoding="utf-8"))
+        config = json.loads(IMAGE_CONFIG.read_text(encoding="utf-8"))
         image = config["image"]
     except FileNotFoundError:
-        problem = f"{NOTEBOOK_CONFIG.name} was not found next to the launcher."
+        problem = f"{IMAGE_CONFIG_NAME} was not found in the launcher folder."
     except (json.JSONDecodeError, KeyError, TypeError):
-        problem = f'{NOTEBOOK_CONFIG.name} must contain {{"image": "<image name>"}}.'
+        problem = f'{IMAGE_CONFIG_NAME} must contain {{"image": "<image name>"}}.'
     else:
         if isinstance(image, str) and IMAGE_PATTERN.fullmatch(image):
             IMAGE = image
             print(f"📓 Notebook image: {IMAGE}")
             return
-        problem = f"{NOTEBOOK_CONFIG.name} names an image that isn't from ghcr.io/dandi/."
+        problem = f"{IMAGE_CONFIG_NAME} names an image that isn't from ghcr.io/dandi/."
 
     print(f"❌ {problem} Please re-download the launcher.")
     input("Press Enter to exit...")

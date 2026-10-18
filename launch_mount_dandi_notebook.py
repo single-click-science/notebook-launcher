@@ -188,6 +188,15 @@ def seed_work_dir():
     subprocess.run(f"docker rm -f {seed_name}", shell=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    # The image's /work also holds setup files (README, environment.yml,
+    # requirements.in) for people building the environment by hand. The
+    # image already provides that environment, so keep only the notebooks
+    # to avoid confusing users. Subfolders are left alone in case a
+    # notebook reads data from them.
+    for path in WORK_DIR.iterdir():
+        if path.is_file() and path.suffix != ".ipynb":
+            path.unlink()
+
     print(f"✅ Notebooks copied to {WORK_DIR}")
 
 

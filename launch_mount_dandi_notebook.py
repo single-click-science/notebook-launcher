@@ -1,22 +1,16 @@
-import os
 import sys
-import re
 import subprocess
 import socket
 import time
 import itertools
 import threading
 import webbrowser
+import atexit
+import secrets
+import signal
 from pathlib import Path
 
 # ----------------- Config -----------------
-frames = itertools.cycle(["|", "/", "-", "\\"])
-for _ in range(50):
-    sys.stdout.write(f"\rTesting spinner {next(frames)}")
-    sys.stdout.flush()
-    time.sleep(0.1)
-print("\nDone.")
-
 
 # Which prebuilt notebook image to run. Change this to the notebook you want,
 # e.g. "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"
@@ -35,6 +29,11 @@ else:
 # when the container is removed.
 WORK_DIR = REPO_PATH / "work"
 CONTAINER_WORK_PATH = "/work"
+
+# Generated fresh on every launch so each user's Jupyter server has its own
+# random secret. Passed into the container as JUPYTER_TOKEN, which Jupyter
+# Server uses instead of generating its own.
+JUPYTER_TOKEN = secrets.token_hex(24)
 
 
 # ----------------- Progress indicator -----------------
@@ -192,6 +191,60 @@ def seed_work_dir():
     print(f"✅ Notebooks copied to {WORK_DIR}")
 
 
+_shutdown_done = False
+
+
+def stop_container():
+    """Stop and remove the notebook container. Safe to call more than once.
+    Notebooks live in the bind-mounted WORK_DIR, so removing the container
+    doesn't lose saved work."""
+    global _shutdown_done
+    if _shutdown_done:
+        return
+    _shutdown_done = True
+    print("\n🛑 Stopping Docker container...")
+    subprocess.run(f"docker stop --time 5 {CONTAINER_NAME}", shell=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(f"docker rm -f {CONTAINER_NAME}", shell=True,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _handle_termination_signal(signum, frame):
+    stop_container()
+    sys.exit(0)
+
+
+def _register_shutdown_handlers():
+    """Make sure the container stops no matter how the launcher closes:
+    pressing Enter, Ctrl+C, or the console window being closed/logged
+    off/shut down (Windows doesn't run atexit handlers for that last case,
+    so it needs its own console control handler)."""
+    atexit.register(stop_container)
+
+    for sig_name in ("SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"):
+        sig = getattr(signal, sig_name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, _handle_termination_signal)
+            except (ValueError, OSError):
+                pass
+
+    if sys.platform == "win32":
+        import ctypes
+
+        # Event types: 0=CTRL_C, 1=CTRL_BREAK, 2=CTRL_CLOSE, 5=CTRL_LOGOFF, 6=CTRL_SHUTDOWN
+        handler_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_uint)
+
+        def _console_ctrl_handler(ctrl_type):
+            stop_container()
+            return False
+
+        # Keep a reference so it isn't garbage-collected before Windows calls it.
+        global _console_ctrl_handler_ref
+        _console_ctrl_handler_ref = handler_type(_console_ctrl_handler)
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(_console_ctrl_handler_ref, True)
+
+
 def start_container(starting_port, max_tries=20):
     """
     Start the notebook image, bound to localhost only. If Docker reports the
@@ -206,6 +259,7 @@ def start_container(starting_port, max_tries=20):
         command = (
             f"docker run -d --name {CONTAINER_NAME} "
             f"-p 127.0.0.1:{port}:8888 "
+            f"-e JUPYTER_TOKEN={JUPYTER_TOKEN} "
             f'-v "{WORK_DIR}:{CONTAINER_WORK_PATH}" '
             f"{IMAGE}"
         )
@@ -258,48 +312,9 @@ def wait_for_jupyter(port, timeout=60):
     return ready
 
 
-def get_jupyter_token(timeout=30):
-    """
-    Jupyter generates its own token at container startup and prints a URL
-    containing it to stdout/stderr. Poll `docker logs` until that URL shows up
-    and pull the token out of it.
-    """
-    pattern = re.compile(r"token=([a-zA-Z0-9]+)")
-    token = None
-
-    with Spinner("Reading Jupyter token from container logs..."):
-        start = time.time()
-        while time.time() - start < timeout:
-            result = subprocess.run(
-                f"docker logs {CONTAINER_NAME}",
-                shell=True,
-                capture_output=True,
-                text=True,
-            )
-            combined = result.stdout + result.stderr
-            match = pattern.search(combined)
-            if match:
-                token = match.group(1)
-                break
-            time.sleep(1)
-
-    if token:
-        print("✅ Token found")
-    else:
-        print("⚠️ Could not find a token in the container logs.")
-    return token
-
-
-def open_jupyter(token, port):
+def open_jupyter(port):
     """Open JupyterLab in the browser."""
-    if token:
-        url = f"http://127.0.0.1:{port}/lab?token={token}"
-    else:
-        # Fall back to the bare URL; user will need to copy the token
-        # themselves from `docker logs`, e.g. `docker logs {CONTAINER_NAME}`.
-        url = f"http://127.0.0.1:{port}/lab"
-        print(f"⚠️ Opening without a token. If prompted, run: docker logs {CONTAINER_NAME}")
-
+    url = f"http://127.0.0.1:{port}/lab?token={JUPYTER_TOKEN}"
     print(f"🌐 Opening Jupyter at: {url}")
     try:
         webbrowser.open(url)
@@ -312,6 +327,8 @@ def open_jupyter(token, port):
 def main():
     print("📦 Starting DANDI example notebook\n" + "=" * 40)
 
+    _register_shutdown_handlers()
+
     check_docker()
     remove_stale_container()
     pull_image()
@@ -321,19 +338,21 @@ def main():
     if starting_guess is None:
         starting_guess = DEFAULT_PORT  # let start_container's own retry loop sort it out
 
-    port = start_container(starting_guess)
-    if port != DEFAULT_PORT:
-        print(f"ℹ️ Port {DEFAULT_PORT} was busy, using {port} instead.")
+    try:
+        port = start_container(starting_guess)
+        if port != DEFAULT_PORT:
+            print(f"ℹ️ Port {DEFAULT_PORT} was busy, using {port} instead.")
 
-    if wait_for_jupyter(port):
-        token = get_jupyter_token()
-        open_jupyter(token, port)
-    else:
-        print("❌ Jupyter never became reachable. Check `docker logs "
-              f"{CONTAINER_NAME}` for details.")
+        if wait_for_jupyter(port):
+            open_jupyter(port)
+        else:
+            print("❌ Jupyter never became reachable. Check `docker logs "
+                  f"{CONTAINER_NAME}` for details.")
 
-    print(f"\n🎉 All set! Jupyter should be running. Your notebooks are saved in:\n{WORK_DIR}")
-    input("Press Enter to exit...")
+        print(f"\n🎉 All set! Jupyter should be running. Your notebooks are saved in:\n{WORK_DIR}")
+        input("Press Enter to stop Jupyter and exit...")
+    finally:
+        stop_container()
 
 
 if __name__ == "__main__":

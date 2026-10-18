@@ -1,0 +1,88 @@
+name: Build Executables
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            package_name: single-click-dandi-windows
+            binary_name: launch.exe
+          - os: ubuntu-latest
+            package_name: single-click-dandi-linux
+            binary_name: launch
+          - os: macos-latest
+            package_name: single-click-dandi-macos
+            binary_name: launch
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: pip install pyinstaller
+
+      - name: Build executable with PyInstaller
+        run: pyinstaller launch.spec --noconfirm --clean
+
+      - name: Assemble distributable package
+        # Only the launcher ships: notebooks come from the Docker image and
+        # are copied into a work/ folder next to the launcher on first run.
+        shell: bash
+        run: |
+          mkdir -p "package/${{ matrix.package_name }}"
+          cp "dist/${{ matrix.binary_name }}" "package/${{ matrix.package_name }}/"
+          if [ "${{ matrix.os }}" != "windows-latest" ]; then
+            chmod +x "package/${{ matrix.package_name }}/${{ matrix.binary_name }}"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package_name }}
+          path: package/${{ matrix.package_name }}
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Restore executable permissions
+        # actions/upload-artifact@v4 resets all uploaded files to 644, so the
+        # chmod +x applied during the build job doesn't survive the upload ->
+        # download round trip. Without this, the macOS/Linux binaries ship
+        # non-executable.
+        run: find artifacts -type f -name "launch" -exec chmod +x {} \;
+
+      - name: Zip each platform package
+        run: |
+          cd artifacts
+          for dir in */; do
+            name="${dir%/}"
+            zip -r "../${name}.zip" "$name"
+          done
+
+      - name: Create release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.zip'
+          generate_release_notes: true

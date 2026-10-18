@@ -12,8 +12,9 @@ from pathlib import Path
 
 # ----------------- Config -----------------
 
-# Which prebuilt notebook image to run. Change this to the notebook you want,
-# e.g. "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"
+# Placeholder: which prebuilt notebook image to run. This will eventually be
+# supplied by the DANDI example-notebooks GitHub workflow rather than
+# hard-coded here.
 IMAGE = "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"
 
 CONTAINER_NAME = "dandi-example-notebook"

@@ -7,11 +7,11 @@ This release launches the [DANDI:001550](https://dandiarchive.org/dandiset/00155
 ## Download
 
 This app requires Docker running. Docker can be downloaded here: https://www.docker.com/products/docker-desktop/.
-Download the zip for your OS from the [latest release](https://github.com/MarikeReimer/single-click-dandi/releases/latest), then extract it.
+Download the zip for your OS from the [latest release](https://github.com/single-click-science/single-click-dandi/releases/latest), then extract it.
 
-- [Windows](https://github.com/MarikeReimer/single-click-dandi/releases/latest/download/single-click-dandi-windows.zip)
-- [macOS](https://github.com/MarikeReimer/single-click-dandi/releases/latest/download/single-click-dandi-macos.zip)
-- [Linux](https://github.com/MarikeReimer/single-click-dandi/releases/latest/download/single-click-dandi-linux.zip)
+- [Windows](https://github.com/single-click-science/single-click-dandi/releases/latest/download/single-click-dandi-windows.zip)
+- [macOS](https://github.com/single-click-science/single-click-dandi/releases/latest/download/single-click-dandi-macos.zip)
+- [Linux](https://github.com/single-click-science/single-click-dandi/releases/latest/download/single-click-dandi-linux.zip)
 
 Do not use the green "Code" → "Download ZIP" button on this repo — that downloads the source code only, without the built launcher.
 

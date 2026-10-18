@@ -1,4 +1,6 @@
 import sys
+import json
+import re
 import subprocess
 import socket
 import time
@@ -11,11 +13,6 @@ import signal
 from pathlib import Path
 
 # ----------------- Config -----------------
-
-# Placeholder: which prebuilt notebook image to run. This will eventually be
-# supplied by the DANDI example-notebooks GitHub workflow rather than
-# hard-coded here.
-IMAGE = "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"
 
 CONTAINER_NAME = "dandi-example-notebook"
 DEFAULT_PORT = 8888  # preferred host-side port; bound to 127.0.0.1 only
@@ -30,6 +27,18 @@ else:
 # when the container is removed.
 WORK_DIR = REPO_PATH / "work"
 CONTAINER_WORK_PATH = "/work"
+
+# Which prebuilt notebook image to run. Read from notebook.json next to the
+# launcher, which the DANDI example-notebooks workflow writes when it
+# packages a release, e.g. {"image": "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"}
+NOTEBOOK_CONFIG = REPO_PATH / "notebook.json"
+
+# Only DANDI's own registry is allowed. The pattern also limits the name to
+# characters that are safe to pass through the shell to docker.
+IMAGE_PATTERN = re.compile(
+    r"ghcr\.io/dandi/[a-z0-9._/-]+(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?"
+)
+IMAGE = None  # set from NOTEBOOK_CONFIG by load_image()
 
 # Generated fresh on every launch so each user's Jupyter server has its own
 # random secret. Passed into the container as JUPYTER_TOKEN, which Jupyter
@@ -104,6 +113,28 @@ def run(command, **kwargs):
         print(f"❌ Command failed: {command}")
         input("Press Enter to exit...")
         sys.exit(1)
+
+
+def load_image():
+    """Read the notebook image name from NOTEBOOK_CONFIG and validate it."""
+    global IMAGE
+    try:
+        config = json.loads(NOTEBOOK_CONFIG.read_text(encoding="utf-8"))
+        image = config["image"]
+    except FileNotFoundError:
+        problem = f"{NOTEBOOK_CONFIG.name} was not found next to the launcher."
+    except (json.JSONDecodeError, KeyError, TypeError):
+        problem = f'{NOTEBOOK_CONFIG.name} must contain {{"image": "<image name>"}}.'
+    else:
+        if isinstance(image, str) and IMAGE_PATTERN.fullmatch(image):
+            IMAGE = image
+            print(f"📓 Notebook image: {IMAGE}")
+            return
+        problem = f"{NOTEBOOK_CONFIG.name} names an image that isn't from ghcr.io/dandi/."
+
+    print(f"❌ {problem} Please re-download the launcher.")
+    input("Press Enter to exit...")
+    sys.exit(1)
 
 
 def check_docker():
@@ -337,6 +368,7 @@ def open_jupyter(port):
 def main():
     print("📦 Starting DANDI example notebook\n" + "=" * 40)
 
+    load_image()
     _register_shutdown_handlers()
 
     check_docker()

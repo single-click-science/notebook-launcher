@@ -38,12 +38,13 @@ jobs:
         run: pyinstaller launch.spec --noconfirm --clean
 
       - name: Assemble distributable package
-        # Only the launcher ships: notebooks come from the Docker image and
-        # are copied into a work/ folder next to the launcher on first run.
+        # The launcher plus notebook.json, which names the image to run.
+        # Notebooks come from that image and are copied into a work/ folder
+        # next to the launcher on first run.
         shell: bash
         run: |
           mkdir -p "package/${{ matrix.package_name }}"
-          cp "dist/${{ matrix.binary_name }}" "package/${{ matrix.package_name }}/"
+          cp "dist/${{ matrix.binary_name }}" notebook.json "package/${{ matrix.package_name }}/"
           if [ "${{ matrix.os }}" != "windows-latest" ]; then
             chmod +x "package/${{ matrix.package_name }}/${{ matrix.binary_name }}"
           fi

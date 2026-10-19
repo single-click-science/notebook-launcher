@@ -16,7 +16,7 @@ from pathlib import Path
 
 # ----------------- Config -----------------
 
-CONTAINER_NAME = "dandi-example-notebook"
+CONTAINER_NAME = "single-click-notebook"
 DEFAULT_PORT = 8888  # preferred host-side port; bound to 127.0.0.1 only
 
 if getattr(sys, "frozen", False):

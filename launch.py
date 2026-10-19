@@ -208,6 +208,13 @@ def remove_stale_container():
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def image_is_local():
+    """True if IMAGE is already in the local Docker image store."""
+    result = subprocess.run(f"docker image inspect {IMAGE}", shell=True,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return result.returncode == 0
+
+
 def pull_image():
     """
     Pull the image so first-run and update latency happen up front.
@@ -215,7 +222,14 @@ def pull_image():
     own real layer-by-layer download progress when left uncaptured, which is
     more informative than a generic spinner — capturing it to drive a
     spinner would throw that away.
+
+    An image pinned by digest (name@sha256:...) can never change, so once
+    it's downloaded there's nothing to pull. Skipping the pull then lets the
+    launcher start offline or while the registry is unreachable.
     """
+    if "@sha256:" in IMAGE and image_is_local():
+        print("✅ Pinned image already downloaded; skipping pull")
+        return
     run(f"docker pull {IMAGE}")
 
 

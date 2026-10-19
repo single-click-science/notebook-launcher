@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['launch_mount_dandi_notebook.py'],
+    ['launch.py'],
     pathex=[],
     binaries=[],
     datas=[],

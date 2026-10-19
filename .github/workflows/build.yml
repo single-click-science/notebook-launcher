@@ -13,13 +13,13 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            package_name: single-click-dandi-windows
+            package_name: notebook-launcher-windows
             binary_name: launch.exe
           - os: ubuntu-latest
-            package_name: single-click-dandi-linux
+            package_name: notebook-launcher-linux
             binary_name: launch
           - os: macos-latest
-            package_name: single-click-dandi-macos
+            package_name: notebook-launcher-macos
             binary_name: launch
     runs-on: ${{ matrix.os }}
     steps:

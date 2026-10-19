@@ -1,4 +1,4 @@
-# single-click-dandi
+# notebook-launcher
 
 A one-click desktop app that runs DANDI example notebooks inside a prebuilt Docker environment. It pulls a notebook image from the [DANDI Archive example-notebooks](https://github.com/dandi/example-notebooks) registry, starts JupyterLab locally, and opens it in your browser — no Python, conda, or CLI setup required.
 
@@ -12,11 +12,11 @@ This version launches the [DANDI:001550](https://dandiarchive.org/dandiset/00155
 
 Docker must be running. You can install Docker Desktop here: https://www.docker.com/products/docker-desktop/
 
-Download the zip for your operating system from the [Latest Release](https://github.com/single-click-science/single-click-dandi/releases/latest) page and extract it.
+Download the zip for your operating system from the [Latest Release](https://github.com/single-click-science/notebook-launcher/releases/latest) page and extract it.
 
-- [Windows](https://github.com/single-click-science/single-click-dandi/releases/latest/download/single-click-dandi-windows.zip)
-- [macOS](https://github.com/single-click-science/single-click-dandi/releases/latest/download/single-click-dandi-macos.zip)
-- [Linux](https://github.com/single-click-science/single-click-dandi/releases/latest/download/single-click-dandi-linux.zip)
+- [Windows](https://github.com/single-click-science/notebook-launcher/releases/latest/download/notebook-launcher-windows.zip)
+- [macOS](https://github.com/single-click-science/notebook-launcher/releases/latest/download/notebook-launcher-macos.zip)
+- [Linux](https://github.com/single-click-science/notebook-launcher/releases/latest/download/notebook-launcher-linux.zip)
 
 Do not use "Code → Download ZIP." That downloads only the source code, not the launcher.
 

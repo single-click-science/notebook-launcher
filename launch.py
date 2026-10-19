@@ -10,19 +10,34 @@ import itertools
 import threading
 import webbrowser
 import atexit
+import hashlib
 import secrets
 import signal
 from pathlib import Path
 
 # ----------------- Config -----------------
 
-CONTAINER_NAME = "single-click-notebook"
 DEFAULT_PORT = 8888  # preferred host-side port; bound to 127.0.0.1 only
 
 if getattr(sys, "frozen", False):
     REPO_PATH = Path(sys.executable).parent.resolve()
 else:
     REPO_PATH = Path(__file__).parent.resolve()
+
+# One container name per launcher folder, so launchers extracted to
+# different folders can run side by side, while relaunching from the same
+# folder still finds and replaces its own leftover container.
+CONTAINER_NAME = "single-click-notebook-" + hashlib.sha256(
+    str(REPO_PATH).lower().encode("utf-8")).hexdigest()[:10]
+
+# Setup files removed from WORK_DIR on first run (compared lowercased).
+SETUP_FILES = {
+    "readme.md",
+    "environment.yml",
+    "environment.yaml",
+    "requirements.in",
+    "requirements.txt",
+}
 
 # Host folder where notebooks persist across runs. Bind-mounted over the
 # image's notebook folder (CONTAINER_WORK_PATH), so edits and outputs land
@@ -257,13 +272,13 @@ def seed_work_dir():
     subprocess.run(f"docker rm -f {seed_name}", shell=True,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    # The image's /work also holds setup files (README, environment.yml,
-    # requirements.in) for people building the environment by hand. The
-    # image already provides that environment, so keep only the notebooks
-    # to avoid confusing users. Subfolders are left alone in case a
-    # notebook reads data from them.
+    # The image's notebook folder can also hold setup files for people
+    # building the environment by hand. The image already provides that
+    # environment, so remove just those to avoid confusing users. Everything
+    # else stays: notebooks often import helper modules or read data files
+    # sitting next to them.
     for path in WORK_DIR.iterdir():
-        if path.is_file() and path.suffix != ".ipynb":
+        if path.is_file() and path.name.lower() in SETUP_FILES:
             path.unlink()
 
     print(f"✅ Notebooks copied to {WORK_DIR}")

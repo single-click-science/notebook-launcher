@@ -20,6 +20,16 @@ Download the zip for your operating system from the [Latest Release](https://git
 
 Do not use "Code → Download ZIP." That downloads only the source code, not the launcher.
 
+### Supported Platforms
+
+| Download | Runs on | Not supported |
+|---|---|---|
+| Windows | Windows 10 and 11 on Intel/AMD (64-bit) PCs | — |
+| macOS | Apple Silicon Macs (M1 and later) | Intel Macs |
+| Linux | Intel/AMD 64-bit (x86-64) | ARM (e.g. Raspberry Pi, ARM servers) |
+
+Windows on ARM devices (e.g. Snapdragon laptops) may work through Windows' built-in emulation, but this hasn't been tested.
+
 ## How to Run
 
 1. Start Docker.

@@ -4,6 +4,8 @@ import re
 import subprocess
 import socket
 import time
+import urllib.error
+import urllib.request
 import itertools
 import threading
 import webbrowser
@@ -356,16 +358,26 @@ def start_container(starting_port, max_tries=20):
 
 
 def wait_for_jupyter(port, timeout=60):
-    """Wait until Jupyter is listening on the host port."""
+    """
+    Wait until Jupyter answers HTTP requests on the host port. A plain TCP
+    connect isn't enough: Docker Desktop's port forwarder accepts connections
+    as soon as the container starts, before Jupyter inside is serving, so the
+    browser would open onto a dropped connection.
+    """
+    url = f"http://127.0.0.1:{port}/api/status?token={JUPYTER_TOKEN}"
     ready = False
     with Spinner(f"Waiting for Jupyter on port {port}..."):
         start = time.time()
         while time.time() - start < timeout:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                if sock.connect_ex(("127.0.0.1", port)) == 0:
-                    ready = True
-                    break
-            time.sleep(1)
+            try:
+                urllib.request.urlopen(url, timeout=5).close()
+                ready = True
+                break
+            except urllib.error.HTTPError:
+                ready = True  # any HTTP status means Jupyter is serving
+                break
+            except (urllib.error.URLError, ConnectionError, OSError):
+                time.sleep(1)
 
     if ready:
         print("✅ Jupyter is ready")

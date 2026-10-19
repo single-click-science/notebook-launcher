@@ -53,4 +53,4 @@ The notebooks are from the [DANDI example-notebooks](https://github.com/dandi/ex
 
 ## License & Contribution
 
-The launcher is part of the Single Click Science project and is maintained independently of DANDI. Integration code is open-source ([MIT License](LICENSE)) and may be used by DANDI Archive or other archives. The core SCS engine remains a separate project with its own roadmap and governance.
+The launcher is part of the Single Click Science project and is maintained independently of DANDI. Integration code is open-source ([Apache License 2.0](LICENSE)) and may be used by DANDI Archive or other archives. The core SCS engine remains a separate project with its own roadmap and governance.

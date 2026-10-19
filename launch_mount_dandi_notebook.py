@@ -22,25 +22,36 @@ if getattr(sys, "frozen", False):
 else:
     REPO_PATH = Path(__file__).parent.resolve()
 
-# Host folder where notebooks persist across runs. Bind-mounted over /work
-# in the container, so edits and outputs land here instead of being lost
-# when the container is removed.
+# Host folder where notebooks persist across runs. Bind-mounted over the
+# image's notebook folder (CONTAINER_WORK_PATH), so edits and outputs land
+# here instead of being lost when the container is removed.
 WORK_DIR = REPO_PATH / "work"
-CONTAINER_WORK_PATH = "/work"
+CONTAINER_WORK_PATH = None  # set from IMAGE_CONFIG by load_image()
+DEFAULT_CONTAINER_WORK_PATH = "/work"  # where DANDI's images keep notebooks
 
 # Which prebuilt notebook image to run. Read from config/image.json in the
-# launcher's folder, which the DANDI example-notebooks workflow writes when
-# it packages a release, e.g. {"image": "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"}
+# launcher's folder, which the publishing workflow writes when it packages a
+# release, e.g. {"image": "ghcr.io/dandi/example-notebooks/001550-paganlab:latest"}
+# An optional "notebook_dir" names the folder inside the image that holds the
+# notebooks, for images that don't use /work (e.g. "/home/jovyan/work").
 # Kept in a subfolder so users see only the launcher and don't open it by mistake.
 IMAGE_CONFIG_NAME = "config/image.json"
 IMAGE_CONFIG = REPO_PATH / IMAGE_CONFIG_NAME
 
-# Only DANDI's own registry is allowed. The pattern also limits the name to
-# characters that are safe to pass through the shell to docker.
+# Any registry is allowed. The pattern only checks for a well-formed image
+# reference ([registry[:port]/]name[:tag][@digest]), which also limits it to
+# characters that are safe to pass through the shell to docker and stops it
+# from starting with "-" (which docker would read as an option).
 IMAGE_PATTERN = re.compile(
-    r"ghcr\.io/dandi/[a-z0-9._/-]+(:[A-Za-z0-9._-]+)?(@sha256:[a-f0-9]{64})?"
+    r"[a-z0-9][a-z0-9._-]*(:[0-9]+)?(/[a-z0-9][a-z0-9._-]*)*"
+    r"(:[A-Za-z0-9_][A-Za-z0-9._-]*)?(@sha256:[a-f0-9]{64})?"
 )
 IMAGE = None  # set from IMAGE_CONFIG by load_image()
+
+# An absolute container path made of plain name segments. Segments can't
+# start with "." (so no ".." escapes), and like the image pattern this keeps
+# it safe to pass through the shell to docker.
+NOTEBOOK_DIR_PATTERN = re.compile(r"(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+")
 
 # Generated fresh on every launch so each user's Jupyter server has its own
 # random secret. Passed into the container as JUPYTER_TOKEN, which Jupyter
@@ -118,21 +129,29 @@ def run(command, **kwargs):
 
 
 def load_image():
-    """Read the notebook image name from IMAGE_CONFIG and validate it."""
-    global IMAGE
+    """Read the notebook image name and notebook folder from IMAGE_CONFIG
+    and validate them."""
+    global IMAGE, CONTAINER_WORK_PATH
     try:
         config = json.loads(IMAGE_CONFIG.read_text(encoding="utf-8"))
         image = config["image"]
+        notebook_dir = config.get("notebook_dir", DEFAULT_CONTAINER_WORK_PATH)
     except FileNotFoundError:
         problem = f"{IMAGE_CONFIG_NAME} was not found in the launcher folder."
-    except (json.JSONDecodeError, KeyError, TypeError):
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
         problem = f'{IMAGE_CONFIG_NAME} must contain {{"image": "<image name>"}}.'
     else:
-        if isinstance(image, str) and IMAGE_PATTERN.fullmatch(image):
+        if not (isinstance(image, str) and IMAGE_PATTERN.fullmatch(image)):
+            problem = f"{IMAGE_CONFIG_NAME} doesn't contain a valid Docker image name."
+        elif not (isinstance(notebook_dir, str)
+                  and NOTEBOOK_DIR_PATTERN.fullmatch(notebook_dir)):
+            problem = (f'{IMAGE_CONFIG_NAME} has an invalid "notebook_dir"; '
+                       "it must be an absolute path like /home/jovyan/work.")
+        else:
             IMAGE = image
+            CONTAINER_WORK_PATH = notebook_dir
             print(f"📓 Notebook image: {IMAGE}")
             return
-        problem = f"{IMAGE_CONFIG_NAME} names an image that isn't from ghcr.io/dandi/."
 
     print(f"❌ {problem} Please re-download the launcher.")
     input("Press Enter to exit...")
@@ -368,7 +387,7 @@ def open_jupyter(port):
 # ----------------- Main -----------------
 
 def main():
-    print("📦 Starting DANDI example notebook\n" + "=" * 40)
+    print("📦 Starting notebook\n" + "=" * 40)
 
     load_image()
     _register_shutdown_handlers()

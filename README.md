@@ -2,11 +2,11 @@
 
 A one-click desktop app that runs DANDI example notebooks inside a prebuilt Docker environment. It pulls a notebook image from the [DANDI Archive example-notebooks](https://github.com/dandi/example-notebooks) registry, starts JupyterLab locally, and opens it in your browser — no Python, conda, or CLI setup required.
 
-This launcher is part of the [Single Click Science](https://github.com/single-click-science) project, which provides portable, reproducible execution environments for computational neuroscience. The launcher integrates with DANDI but remains an independent, ecosystem-neutral tool.
+This launcher is part of the [Single Click Science](https://github.com/single-click-science) project, which provides portable, reproducible execution environments for computational neuroscience. The launcher works with notebook images published by the DANDI Archive but is an independent, ecosystem-neutral tool.
 
 ## Current Release
 
-This version launches the [DANDI:001550](https://dandiarchive.org/dandiset/001550) notebooks (Pagan Lab behavioral and optogenetics demos) using a fixed, prebuilt image. Future releases will automatically select the correct image from DANDI's GitHub workflows.
+This version launches the [DANDI:001550](https://dandiarchive.org/dandiset/001550) notebooks (Pagan Lab behavioral and optogenetics demos) using a fixed, prebuilt image.
 
 ## Download
 
@@ -63,4 +63,6 @@ The notebooks are from the [DANDI example-notebooks](https://github.com/dandi/ex
 
 ## License & Contribution
 
-The launcher is part of the Single Click Science project and is maintained independently of DANDI. Integration code is open-source ([Apache License 2.0](LICENSE)) and may be used by DANDI Archive or other archives. The core SCS engine remains a separate project with its own roadmap and governance.
+The launcher is part of the Single Click Science project and is maintained independently of DANDI. Integration code is open-source ([Apache License 2.0](LICENSE)) and may be used by any data archive. The core SCS engine remains a separate project with its own roadmap and governance.
+
+This project is not affiliated with or endorsed by the DANDI Archive.
